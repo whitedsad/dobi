@@ -2,194 +2,134 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>뚱이 클리커: 우주 대항해</title>
+    <title>게임</title>
     <style>
-        body {
-            margin: 0; background: #000; color: #fff;
-            font-family: 'Pretendard', sans-serif; display: flex; height: 100vh; overflow: hidden;
+        /* 게임 배경과 텍스트 스타일 */
+        body { 
+            margin: 0; padding: 0; 
+            background-color: #111; color: white; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; font-family: 'Malgun Gothic', sans-serif; 
+            overflow: hidden;
         }
-        /* 레이아웃 */
-        .main-pane { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        .side-pane { width: 350px; background: #111; border-left: 2px solid #222; padding: 20px; overflow-y: auto; }
-        
-        /* 스코어 */
-        #score { font-size: 3.5rem; font-weight: bold; text-shadow: 0 0 20px #fff; }
-        #pps { color: #888; margin-bottom: 20px; }
-
-        /* 클릭 대상 */
-        .target-box { position: relative; cursor: pointer; transition: 0.1s; }
-        .target-box:active { transform: scale(0.9); }
-        #target-img { width: 280px; height: 280px; border-radius: 50%; border: 5px solid #fff; object-fit: cover; }
-
-        /* 업그레이드 아이템 */
-        .item {
-            background: #222; padding: 15px; border-radius: 10px; margin-bottom: 10px;
-            display: flex; justify-content: space-between; align-items: center;
+        /* 게임 화면(캔버스) 테두리와 네온 효과 */
+        canvas { 
+            background-color: #1a1a1a; 
+            border: 3px solid #333; 
+            box-shadow: 0 0 30px rgba(255, 8, 68, 0.2); 
+            border-radius: 5px;
         }
-        .item:hover { background: #333; }
-        .item.locked { opacity: 0.5; pointer-events: none; }
-        .item-info h4 { margin: 0; font-size: 1rem; }
-        .item-info p { margin: 5px 0 0; font-size: 0.8rem; color: #aaa; }
-        .buy-btn { background: #fff; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .buy-btn:disabled { background: #555; color: #888; }
-
-        /* 엔딩 화면 */
-        #ending {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: white; color: black; display: none;
-            flex-direction: column; align-items: center; justify-content: center;
-            z-index: 1000; text-align: center; animation: fadeIn 2s;
-        }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        .floating-text { position: absolute; pointer-events: none; animation: fly 1s forwards; font-weight: bold; }
-        @keyframes fly { to { transform: translateY(-100px); opacity: 0; } }
+        h1 { margin-bottom: 5px; text-shadow: 0 0 15px rgba(255, 8, 68, 0.8); }
+        #scoreBoard { font-size: 22px; margin-bottom: 20px; font-weight: bold; color: #aaa; }
+        #score { color: #00f2fe; font-size: 28px; }
+        .instructions { margin-top: 15px; color: #777; font-size: 14px; }
     </style>
 </head>
 <body>
 
-    <div class="main-pane">
-        <div id="score">0</div>
-        <div id="pps">초당 생산량: 0</div>
-        <div class="target-box" id="click-area">
-            <img src="스크린샷 2026-04-07 170639.png" id="target-img">
-        </div>
-        <p style="margin-top: 30px; color: #444;">목표: 1,000,000 포인트를 모아 우주로 가기</p>
-    </div>
+<h1>영역 생존: 저주 피하기</h1>
+<div id="scoreBoard">생존 점수: <span id="score">0</span></div>
+<canvas id="gameCanvas" width="500" height="500"></canvas>
+<div class="instructions">조작법: 방향키(←, ↑, →, ↓)를 사용해 붉은 저주를 피하세요!</div>
 
-    <div class="side-pane">
-        <h2 style="letter-spacing: 2px;">상점</h2>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+
+    // 생존자(플레이어) 설정
+    let player = { 
+        x: 235, y: 450, 
+        width: 30, height: 30, 
+        speed: 6, 
+        color: '#00f2fe' 
+    };
+    
+    let enemies = [];
+    let score = 0;
+    let gameOver = false;
+    let keys = {};
+
+    // 키보드 입력 감지 (다중 키 입력 지원)
+    window.addEventListener('keydown', (e) => keys[e.code] = true);
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+    // 적(저주) 스폰 함수
+    function spawnEnemy() {
+        let size = Math.random() * 20 + 15; // 크기 랜덤
+        let x = Math.random() * (canvas.width - size); // 위치 랜덤
+        let speed = Math.random() * 4 + 3; // 떨어지는 속도 랜덤
         
-        <div class="item">
-            <div class="item-info">
-                <h4>운동하는 뚱이</h4>
-                <p>PPS +1 | 가격: <span id="p1">15</span></p>
-            </div>
-            <button class="buy-btn" onclick="buy(1)">구매</button>
-        </div>
-
-        <div class="item">
-            <div class="item-info">
-                <h4>스폰지밥의 응원</h4>
-                <p>PPS +10 | 가격: <span id="p2">150</span></p>
-            </div>
-            <button class="buy-btn" onclick="buy(2)">구매</button>
-        </div>
-
-        <div class="item">
-            <div class="item-info">
-                <h4>게릴라 콘서트</h4>
-                <p>PPS +50 | 가격: <span id="p3">1000</span></p>
-            </div>
-            <button class="buy-btn" onclick="buy(3)">구매</button>
-        </div>
-
-        <div class="item">
-            <div class="item-info">
-                <h4>우주선 엔진</h4>
-                <p>PPS +500 | 가격: <span id="p4">10000</span></p>
-            </div>
-            <button class="buy-btn" onclick="buy(4)">구매</button>
-        </div>
-
-        <hr style="border: 1px solid #222; margin: 20px 0;">
-        <h3>특별</h3>
-        <div class="item">
-            <div class="item-info">
-                <h4>배경 음악 해금</h4>
-                <p>가격: 2000</p>
-            </div>
-            <button class="buy-btn" id="m-btn" onclick="unlockMusic()">해금</button>
-        </div>
-    </div>
-
-    <div id="ending">
-        <h1 style="font-size: 4rem;">축하합니다!</h1>
-        <p style="font-size: 1.5rem;">뚱이는 100만 포인트를 모아 우주 대스타가 되었습니다.</p>
-        <img src="스크린샷 2026-04-07 170639.png" style="width: 200px; margin-top: 20px;">
-        <button class="buy-btn" style="margin-top: 50px; padding: 20px 40px;" onclick="location.reload()">처음부터 다시하기</button>
-    </div>
-
-    <audio id="bgm" loop></audio>
-
-    <script>
-        let score = 0;
-        let pps = 0;
-        const goal = 1000000;
-        const itemPrices = { 1: 15, 2: 150, 3: 1000, 4: 10000 };
-        const itemAdds = { 1: 1, 2: 10, 3: 50, 4: 500 };
-
-        const clickArea = document.getElementById('click-area');
-        const scoreEl = document.getElementById('score');
-        const ppsEl = document.getElementById('pps');
-        const bgm = document.getElementById('bgm');
-
-        // 클릭 이벤트
-        clickArea.addEventListener('mousedown', (e) => {
-            score += 1;
-            checkEnding();
-            updateUI();
-            showClickEffect(e.clientX, e.clientY);
+        enemies.push({ 
+            x: x, y: -30, 
+            width: size, height: size, 
+            speed: speed, 
+            color: '#ff0844' 
         });
+    }
 
-        function buy(id) {
-            if (score >= itemPrices[id]) {
-                score -= itemPrices[id];
-                pps += itemAdds[id];
-                itemPrices[id] = Math.floor(itemPrices[id] * 1.3);
-                document.getElementById(`p${id}`).textContent = itemPrices[id];
-                updateUI();
+    // 메인 게임 루프
+    function update() {
+        if (gameOver) return;
+
+        // 1. 플레이어 이동 처리 (화면 밖으로 못 나가게 제한)
+        if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+        if (keys['ArrowRight'] && player.x + player.width < canvas.width) player.x += player.speed;
+        if (keys['ArrowUp'] && player.y > 0) player.y -= player.speed;
+        if (keys['ArrowDown'] && player.y + player.height < canvas.height) player.y += player.speed;
+
+        // 2. 화면 지우기 (매 프레임마다 새로 그림)
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 3. 플레이어 그리기 (네온 발광 효과)
+        ctx.fillStyle = player.color;
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = player.color;
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+        ctx.shadowBlur = 0; // 다른 도형에 영향 안 주게 초기화
+
+        // 4. 적 이동, 그리기 및 히트박스 충돌 판정
+        for (let i = 0; i < enemies.length; i++) {
+            let enemy = enemies[i];
+            enemy.y += enemy.speed; // 아래로 이동
+
+            ctx.fillStyle = enemy.color;
+            ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+            // AABB(Axis-Aligned Bounding Box) 방식 히트박스 충돌 검사
+            if (player.x < enemy.x + enemy.width &&
+                player.x + player.width > enemy.x &&
+                player.y < enemy.y + enemy.height &&
+                player.y + player.height > enemy.y) {
+                
+                gameOver = true;
+                setTimeout(() => {
+                    alert(`[게임 오버] 영역 붕괴!\n최종 생존 점수: ${score}점\n새로고침(F5)을 눌러 다시 도전하세요.`);
+                }, 10);
+            }
+
+            // 적이 바닥에 닿으면 점수 증가 및 배열에서 제거
+            if (enemy.y > canvas.height) {
+                enemies.splice(i, 1);
+                i--;
+                score++;
+                scoreElement.innerText = score;
             }
         }
 
-        function unlockMusic() {
-            if (score >= 2000) {
-                score -= 2000;
-                bgm.src = "Bite By Night OST_ Final Slaughter (Hoax_ Last Man Standing).mp3"; 
-                bgm.play();
-                document.getElementById('m-btn').disabled = true;
-                document.getElementById('m-btn').textContent = "재생중";
-                updateUI();
-            }
+        // 5. 난이도 증가 시스템 (시간이 지날수록 스폰 확률 상승)
+        let spawnRate = 0.04 + (score * 0.0005);
+        if (Math.random() < spawnRate) {
+            spawnEnemy();
         }
 
-        function updateUI() {
-            scoreEl.textContent = Math.floor(score).toLocaleString();
-            ppsEl.textContent = `초당 생산량: ${pps.toLocaleString()}`;
-            
-            // 버튼 활성화 조절
-            document.querySelectorAll('.buy-btn').forEach((btn, idx) => {
-                // 상점 아이템 버튼만 해당 (음악 버튼 제외)
-                if(idx < 4) {
-                    btn.disabled = score < itemPrices[idx+1];
-                }
-            });
-        }
+        // 다음 프레임 요청
+        requestAnimationFrame(update);
+    }
 
-        function showClickEffect(x, y) {
-            const txt = document.createElement('div');
-            txt.className = 'floating-text';
-            txt.style.left = x + 'px';
-            txt.style.top = y + 'px';
-            txt.textContent = '+1';
-            document.body.appendChild(txt);
-            setTimeout(() => txt.remove(), 1000);
-        }
+    // 게임 루프 시작
+    update();
+</script>
 
-        function checkEnding() {
-            if (score >= goal) {
-                document.getElementById('ending').style.display = 'flex';
-            }
-        }
-
-        // 초당 자동 생산 루프
-        setInterval(() => {
-            if (pps > 0) {
-                score += pps / 10;
-                checkEnding();
-                updateUI();
-            }
-        }, 100);
-    </script>
 </body>
 </html>

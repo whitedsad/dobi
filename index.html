@@ -2,14 +2,194 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>내 첫 사이트</title>
+    <title>뚱이 클리커: 우주 대항해</title>
     <style>
-        body { background-color: white; text-align: center; font-family: sans-serif; }
-        h1 { color: #333; }
+        body {
+            margin: 0; background: #000; color: #fff;
+            font-family: 'Pretendard', sans-serif; display: flex; height: 100vh; overflow: hidden;
+        }
+        /* 레이아웃 */
+        .main-pane { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .side-pane { width: 350px; background: #111; border-left: 2px solid #222; padding: 20px; overflow-y: auto; }
+        
+        /* 스코어 */
+        #score { font-size: 3.5rem; font-weight: bold; text-shadow: 0 0 20px #fff; }
+        #pps { color: #888; margin-bottom: 20px; }
+
+        /* 클릭 대상 */
+        .target-box { position: relative; cursor: pointer; transition: 0.1s; }
+        .target-box:active { transform: scale(0.9); }
+        #target-img { width: 280px; height: 280px; border-radius: 50%; border: 5px solid #fff; object-fit: cover; }
+
+        /* 업그레이드 아이템 */
+        .item {
+            background: #222; padding: 15px; border-radius: 10px; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .item:hover { background: #333; }
+        .item.locked { opacity: 0.5; pointer-events: none; }
+        .item-info h4 { margin: 0; font-size: 1rem; }
+        .item-info p { margin: 5px 0 0; font-size: 0.8rem; color: #aaa; }
+        .buy-btn { background: #fff; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .buy-btn:disabled { background: #555; color: #888; }
+
+        /* 엔딩 화면 */
+        #ending {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; color: black; display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 1000; text-align: center; animation: fadeIn 2s;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .floating-text { position: absolute; pointer-events: none; animation: fly 1s forwards; font-weight: bold; }
+        @keyframes fly { to { transform: translateY(-100px); opacity: 0; } }
     </style>
 </head>
 <body>
-    <h1>도비를 싹 죽여</h1>
-    <p>안녕하세요 도비입니다</p>
+
+    <div class="main-pane">
+        <div id="score">0</div>
+        <div id="pps">초당 생산량: 0</div>
+        <div class="target-box" id="click-area">
+            <img src="스크린샷 2026-04-07 170639.png" id="target-img">
+        </div>
+        <p style="margin-top: 30px; color: #444;">목표: 1,000,000 포인트를 모아 우주로 가기</p>
+    </div>
+
+    <div class="side-pane">
+        <h2 style="letter-spacing: 2px;">상점</h2>
+        
+        <div class="item">
+            <div class="item-info">
+                <h4>운동하는 뚱이</h4>
+                <p>PPS +1 | 가격: <span id="p1">15</span></p>
+            </div>
+            <button class="buy-btn" onclick="buy(1)">구매</button>
+        </div>
+
+        <div class="item">
+            <div class="item-info">
+                <h4>스폰지밥의 응원</h4>
+                <p>PPS +10 | 가격: <span id="p2">150</span></p>
+            </div>
+            <button class="buy-btn" onclick="buy(2)">구매</button>
+        </div>
+
+        <div class="item">
+            <div class="item-info">
+                <h4>게릴라 콘서트</h4>
+                <p>PPS +50 | 가격: <span id="p3">1000</span></p>
+            </div>
+            <button class="buy-btn" onclick="buy(3)">구매</button>
+        </div>
+
+        <div class="item">
+            <div class="item-info">
+                <h4>우주선 엔진</h4>
+                <p>PPS +500 | 가격: <span id="p4">10000</span></p>
+            </div>
+            <button class="buy-btn" onclick="buy(4)">구매</button>
+        </div>
+
+        <hr style="border: 1px solid #222; margin: 20px 0;">
+        <h3>특별</h3>
+        <div class="item">
+            <div class="item-info">
+                <h4>배경 음악 해금</h4>
+                <p>가격: 2000</p>
+            </div>
+            <button class="buy-btn" id="m-btn" onclick="unlockMusic()">해금</button>
+        </div>
+    </div>
+
+    <div id="ending">
+        <h1 style="font-size: 4rem;">축하합니다!</h1>
+        <p style="font-size: 1.5rem;">뚱이는 100만 포인트를 모아 우주 대스타가 되었습니다.</p>
+        <img src="스크린샷 2026-04-07 170639.png" style="width: 200px; margin-top: 20px;">
+        <button class="buy-btn" style="margin-top: 50px; padding: 20px 40px;" onclick="location.reload()">처음부터 다시하기</button>
+    </div>
+
+    <audio id="bgm" loop></audio>
+
+    <script>
+        let score = 0;
+        let pps = 0;
+        const goal = 1000000;
+        const itemPrices = { 1: 15, 2: 150, 3: 1000, 4: 10000 };
+        const itemAdds = { 1: 1, 2: 10, 3: 50, 4: 500 };
+
+        const clickArea = document.getElementById('click-area');
+        const scoreEl = document.getElementById('score');
+        const ppsEl = document.getElementById('pps');
+        const bgm = document.getElementById('bgm');
+
+        // 클릭 이벤트
+        clickArea.addEventListener('mousedown', (e) => {
+            score += 1;
+            checkEnding();
+            updateUI();
+            showClickEffect(e.clientX, e.clientY);
+        });
+
+        function buy(id) {
+            if (score >= itemPrices[id]) {
+                score -= itemPrices[id];
+                pps += itemAdds[id];
+                itemPrices[id] = Math.floor(itemPrices[id] * 1.3);
+                document.getElementById(`p${id}`).textContent = itemPrices[id];
+                updateUI();
+            }
+        }
+
+        function unlockMusic() {
+            if (score >= 2000) {
+                score -= 2000;
+                bgm.src = "Bite By Night OST_ Final Slaughter (Hoax_ Last Man Standing).mp3"; 
+                bgm.play();
+                document.getElementById('m-btn').disabled = true;
+                document.getElementById('m-btn').textContent = "재생중";
+                updateUI();
+            }
+        }
+
+        function updateUI() {
+            scoreEl.textContent = Math.floor(score).toLocaleString();
+            ppsEl.textContent = `초당 생산량: ${pps.toLocaleString()}`;
+            
+            // 버튼 활성화 조절
+            document.querySelectorAll('.buy-btn').forEach((btn, idx) => {
+                // 상점 아이템 버튼만 해당 (음악 버튼 제외)
+                if(idx < 4) {
+                    btn.disabled = score < itemPrices[idx+1];
+                }
+            });
+        }
+
+        function showClickEffect(x, y) {
+            const txt = document.createElement('div');
+            txt.className = 'floating-text';
+            txt.style.left = x + 'px';
+            txt.style.top = y + 'px';
+            txt.textContent = '+1';
+            document.body.appendChild(txt);
+            setTimeout(() => txt.remove(), 1000);
+        }
+
+        function checkEnding() {
+            if (score >= goal) {
+                document.getElementById('ending').style.display = 'flex';
+            }
+        }
+
+        // 초당 자동 생산 루프
+        setInterval(() => {
+            if (pps > 0) {
+                score += pps / 10;
+                checkEnding();
+                updateUI();
+            }
+        }, 100);
+    </script>
 </body>
 </html>

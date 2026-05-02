@@ -2,133 +2,220 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>게임</title>
+    <title>비트 브레이커</title>
     <style>
-        /* 게임 배경과 텍스트 스타일 */
-        body { 
-            margin: 0; padding: 0; 
-            background-color: #111; color: white; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; 
-            height: 100vh; font-family: 'Malgun Gothic', sans-serif; 
-            overflow: hidden;
+        body {
+            margin: 0; background-color: #0a0a0a; color: white;
+            display: flex; flex-direction: column; align-items: center;
+            font-family: 'Arial', sans-serif; overflow: hidden;
+            user-select: none;
         }
-        /* 게임 화면(캔버스) 테두리와 네온 효과 */
-        canvas { 
-            background-color: #1a1a1a; 
-            border: 3px solid #333; 
-            box-shadow: 0 0 30px rgba(255, 8, 68, 0.2); 
-            border-radius: 5px;
+        #gameUI {
+            position: absolute; top: 20px; left: 20px; z-index: 10;
         }
-        h1 { margin-bottom: 5px; text-shadow: 0 0 15px rgba(255, 8, 68, 0.8); }
-        #scoreBoard { font-size: 22px; margin-bottom: 20px; font-weight: bold; color: #aaa; }
-        #score { color: #00f2fe; font-size: 28px; }
-        .instructions { margin-top: 15px; color: #777; font-size: 14px; }
+        h1 { margin: 0; color: #fff; text-shadow: 0 0 10px #00f2fe; }
+        .stats { font-size: 20px; margin-top: 10px; color: #ccc; }
+        #comboText { font-size: 30px; font-weight: bold; color: #ffeb3b; text-shadow: 0 0 15px #ffeb3b; }
+        #judgment { position: absolute; top: 40%; font-size: 50px; font-weight: bold; text-align: center; width: 100%; pointer-events: none; }
+        canvas {
+            background: linear-gradient(180deg, #111 0%, #222 100%);
+            border-left: 2px solid #555; border-right: 2px solid #555;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        }
+        #startBtn {
+            position: absolute; top: 50%; padding: 15px 30px; font-size: 24px;
+            background-color: #00f2fe; color: black; border: none; border-radius: 10px;
+            cursor: pointer; font-weight: bold; box-shadow: 0 0 15px #00f2fe;
+        }
+        .mode-select { margin-top: 10px; }
     </style>
 </head>
 <body>
 
-<h1>영역 생존: 저주 피하기</h1>
-<div id="scoreBoard">생존 점수: <span id="score">0</span></div>
-<canvas id="gameCanvas" width="500" height="500"></canvas>
-<div class="instructions">조작법: 방향키(←, ↑, →, ↓)를 사용해 붉은 저주를 피하세요!</div>
+<!-- 네가 원하는 노래 파일 이름으로 src를 바꿔! -->
+<audio id="bgm" src="song.mp3" preload="auto"></audio>
+
+<div id="gameUI">
+    <h1>BEAT BREAKER</h1>
+    <div class="stats">점수: <span id="score">0</span></div>
+    <div class="stats"><span id="comboText">0 COMBO</span></div>
+    <div class="mode-select">
+        <label><input type="radio" name="mode" value="easy" checked> Easy (느림)</label>
+        <label><input type="radio" name="mode" value="hard"> Hard (빠름)</label>
+    </div>
+</div>
+
+<div id="judgment"></div>
+<button id="startBtn">게임 시작 (음악 재생)</button>
+<canvas id="gameCanvas" width="400" height="700"></canvas>
 
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const scoreElement = document.getElementById('score');
+    const bgm = document.getElementById('bgm');
+    const scoreEl = document.getElementById('score');
+    const comboEl = document.getElementById('comboText');
+    const judgmentEl = document.getElementById('judgment');
+    const startBtn = document.getElementById('startBtn');
+    const modeRadios = document.getElementsByName('mode');
 
-    // 생존자(플레이어) 설정
-    let player = { 
-        x: 235, y: 450, 
-        width: 30, height: 30, 
-        speed: 6, 
-        color: '#00f2fe' 
-    };
+    // --- ⚙️ 게임 설정 (여기서 키랑 속도를 바꿀 수 있어!) ---
+    const KEY_CONFIG = ['d', 'f', 'j', 'k']; // 4키 설정
+    const LANE_WIDTH = 100;
+    const HIT_LINE_Y = 600;
+    let noteSpeed = 7;     // 떨어지는 속도 (Hard 모드면 빨라짐)
+    let spawnRate = 40;    // 노트 생성 주기 (낮을수록 많이 나옴)
     
-    let enemies = [];
+    // 상태 변수
+    let notes = [];
     let score = 0;
-    let gameOver = false;
-    let keys = {};
+    let combo = 0;
+    let frame = 0;
+    let isPlaying = false;
+    let keysPressed = { 'd': false, 'f': false, 'j': false, 'k': false };
 
-    // 키보드 입력 감지 (다중 키 입력 지원)
-    window.addEventListener('keydown', (e) => keys[e.code] = true);
-    window.addEventListener('keyup', (e) => keys[e.code] = false);
+    // 키 입력 이벤트
+    window.addEventListener('keydown', (e) => {
+        let key = e.key.toLowerCase();
+        if (KEY_CONFIG.includes(key) && !keysPressed[key]) {
+            keysPressed[key] = true;
+            checkHit(KEY_CONFIG.indexOf(key));
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        let key = e.key.toLowerCase();
+        if (KEY_CONFIG.includes(key)) keysPressed[key] = false;
+    });
 
-    // 적(저주) 스폰 함수
-    function spawnEnemy() {
-        let size = Math.random() * 20 + 15; // 크기 랜덤
-        let x = Math.random() * (canvas.width - size); // 위치 랜덤
-        let speed = Math.random() * 4 + 3; // 떨어지는 속도 랜덤
+    // 게임 시작 버튼
+    startBtn.addEventListener('click', () => {
+        // 난이도 모드 적용
+        if(document.querySelector('input[name="mode"]:checked').value === 'hard') {
+            noteSpeed = 12;
+            spawnRate = 25;
+        } else {
+            noteSpeed = 7;
+            spawnRate = 40;
+        }
+
+        bgm.currentTime = 0;
+        bgm.play().catch(() => alert("노래 파일(song.mp3)이 같은 폴더에 없거나 브라우저에서 차단했습니다. 시각 효과로만 진행합니다."));
+        startBtn.style.display = 'none';
+        isPlaying = true;
+        update();
+    });
+
+    // 판정 글씨 띄우기 및 타격감 이펙트
+    function showJudgment(text, color, isBlackFlash) {
+        judgmentEl.innerText = text;
+        judgmentEl.style.color = color;
         
-        enemies.push({ 
-            x: x, y: -30, 
-            width: size, height: size, 
-            speed: speed, 
-            color: '#ff0844' 
-        });
+        if (isBlackFlash) {
+            judgmentEl.style.textShadow = '0 0 20px red, 0 0 30px black';
+            document.body.style.backgroundColor = '#200'; // 화면 순간 붉어짐
+            setTimeout(() => document.body.style.backgroundColor = '#0a0a0a', 50);
+        } else {
+            judgmentEl.style.textShadow = `0 0 10px ${color}`;
+        }
+
+        judgmentEl.style.transform = 'scale(1.2)';
+        setTimeout(() => {
+            judgmentEl.innerText = '';
+            judgmentEl.style.transform = 'scale(1)';
+        }, 300);
+    }
+
+    // 판정 체크 로직
+    function checkHit(laneIndex) {
+        if (!isPlaying) return;
+        
+        // 해당 레인에서 판정선에 가장 가까운 노트 찾기
+        let targetNoteIndex = notes.findIndex(n => n.lane === laneIndex && n.y > HIT_LINE_Y - 100);
+        
+        if (targetNoteIndex !== -1) {
+            let note = notes[targetNoteIndex];
+            let diff = Math.abs(note.y - HIT_LINE_Y); // 판정선과 노트의 거리 차이
+
+            if (diff < 20) {
+                // 완벽한 타이밍: 흑섬!
+                score += 100 + (combo * 10);
+                combo++;
+                showJudgment('흑섬!!', '#ff0000', true); 
+            } else if (diff < 50) {
+                // 좋은 타이밍
+                score += 50;
+                combo++;
+                showJudgment('GREAT', '#00f2fe', false);
+            } else {
+                // 빗나감
+                combo = 0;
+                showJudgment('BAD', '#888', false);
+            }
+            
+            notes.splice(targetNoteIndex, 1); // 맞춘 노트 삭제
+            updateUI();
+        }
+    }
+
+    function updateUI() {
+        scoreEl.innerText = score;
+        comboEl.innerText = combo > 1 ? `${combo} COMBO` : '';
     }
 
     // 메인 게임 루프
     function update() {
-        if (gameOver) return;
-
-        // 1. 플레이어 이동 처리 (화면 밖으로 못 나가게 제한)
-        if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
-        if (keys['ArrowRight'] && player.x + player.width < canvas.width) player.x += player.speed;
-        if (keys['ArrowUp'] && player.y > 0) player.y -= player.speed;
-        if (keys['ArrowDown'] && player.y + player.height < canvas.height) player.y += player.speed;
-
-        // 2. 화면 지우기 (매 프레임마다 새로 그림)
+        if (!isPlaying) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        frame++;
 
-        // 3. 플레이어 그리기 (네온 발광 효과)
-        ctx.fillStyle = player.color;
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = player.color;
-        ctx.fillRect(player.x, player.y, player.width, player.height);
-        ctx.shadowBlur = 0; // 다른 도형에 영향 안 주게 초기화
+        // 1. 레인(선) 및 판정선 그리기
+        ctx.strokeStyle = '#444';
+        for(let i=1; i<4; i++) {
+            ctx.beginPath(); ctx.moveTo(i * LANE_WIDTH, 0); ctx.lineTo(i * LANE_WIDTH, canvas.height); ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.fillRect(0, HIT_LINE_Y - 15, canvas.width, 30); // 판정선
 
-        // 4. 적 이동, 그리기 및 히트박스 충돌 판정
-        for (let i = 0; i < enemies.length; i++) {
-            let enemy = enemies[i];
-            enemy.y += enemy.speed; // 아래로 이동
-
-            ctx.fillStyle = enemy.color;
-            ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
-
-            // AABB(Axis-Aligned Bounding Box) 방식 히트박스 충돌 검사
-            if (player.x < enemy.x + enemy.width &&
-                player.x + player.width > enemy.x &&
-                player.y < enemy.y + enemy.height &&
-                player.y + player.height > enemy.y) {
-                
-                gameOver = true;
-                setTimeout(() => {
-                    alert(`[게임 오버] 영역 붕괴!\n최종 생존 점수: ${score}점\n새로고침(F5)을 눌러 다시 도전하세요.`);
-                }, 10);
+        // 키 누를 때 밑에 빛나는 효과
+        for(let i=0; i<4; i++) {
+            if(keysPressed[KEY_CONFIG[i]]) {
+                let gradient = ctx.createLinearGradient(0, HIT_LINE_Y, 0, canvas.height);
+                gradient.addColorStop(0, 'rgba(0, 242, 254, 0.5)');
+                gradient.addColorStop(1, 'transparent');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(i * LANE_WIDTH, HIT_LINE_Y, LANE_WIDTH, canvas.height - HIT_LINE_Y);
             }
+        }
 
-            // 적이 바닥에 닿으면 점수 증가 및 배열에서 제거
-            if (enemy.y > canvas.height) {
-                enemies.splice(i, 1);
+        // 2. 랜덤하게 노트 생성 (나중에 직접 패턴을 짜볼 수도 있어!)
+        if (frame % Math.floor(spawnRate) === 0) {
+            let lane = Math.floor(Math.random() * 4);
+            notes.push({ lane: lane, y: -20 });
+        }
+
+        // 3. 노트 이동 및 그리기
+        for (let i = 0; i < notes.length; i++) {
+            let note = notes[i];
+            note.y += noteSpeed;
+
+            ctx.fillStyle = '#00f2fe';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f2fe';
+            ctx.fillRect(note.lane * LANE_WIDTH + 10, note.y, LANE_WIDTH - 20, 20);
+            ctx.shadowBlur = 0;
+
+            // 판정선을 너무 지나치면 Miss 처리
+            if (note.y > canvas.height) {
+                notes.splice(i, 1);
                 i--;
-                score++;
-                scoreElement.innerText = score;
+                combo = 0;
+                showJudgment('MISS', '#ff4444', false);
+                updateUI();
             }
         }
 
-        // 5. 난이도 증가 시스템 (시간이 지날수록 스폰 확률 상승)
-        let spawnRate = 0.04 + (score * 0.0005);
-        if (Math.random() < spawnRate) {
-            spawnEnemy();
-        }
-
-        // 다음 프레임 요청
         requestAnimationFrame(update);
     }
-
-    // 게임 루프 시작
-    update();
 </script>
 
 </body>
